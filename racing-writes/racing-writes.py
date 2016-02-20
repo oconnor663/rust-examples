@@ -2,30 +2,35 @@
 
 import threading
 
+INCREMENTS_PER_THREAD = 100000
+THREADS = 10
 
-# The easiest way to pass an integer by reference in Python is to define a
-# class to hold it. We could've just used a global, but using globals in Rust
-# come with extra restrictions, and we want the two examples to look similar.
+
+# Define a small class so that we can pass a counter by reference.
 class Counter:
     def __init__(self):
         self.count = 0
 
 
-def increment_counter(counter, times):
-    for i in range(times):
-        counter.count += 1
+# In Python, as in most languages, the easy way to increment a shared counter
+# is prone to race conditions. Another thread can swoop in *after* we've read
+# the previous value of count, but *before* we've written the new value. The
+# result is that we overwrite the other thread's work, and the counter winds up
+# smaller than expected.
+def bad_increment(counter):
+    counter.count += 1
 
 
 counter = Counter()
-
-# Start a thread that increments the counter 500k times.
-thread = threading.Thread(target=lambda: increment_counter(counter, 500000))
-thread.start()
-
-# At the same time, increment the counter 500k times in the main thread.
-# RACE CONDITION!
-increment_counter(counter, 500000)
-thread.join()
-
-print("We incremented this counter a million times. What's it's value now?")
-print("=>", counter.count)
+threads = []
+for _ in range(THREADS):
+    def thread_inner():
+        for _ in range(INCREMENTS_PER_THREAD):
+            bad_increment(counter)
+    thread = threading.Thread(target=thread_inner)
+    threads.append(thread)
+    thread.start()
+for thread in threads:
+    thread.join()
+print("Expected:", THREADS * INCREMENTS_PER_THREAD)
+print("Actual:", counter.count)
